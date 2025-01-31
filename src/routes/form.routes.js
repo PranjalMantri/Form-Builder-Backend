@@ -1,6 +1,7 @@
 import express from "express";
 import { body, validationResult } from "express-validator";
 import { Form } from "../models/form.model.js";
+import { Submission } from "../models/submission.model.js";
 import authMiddleware from "../middlewares/auth.middleware.js";
 
 const router = express.Router();
@@ -174,5 +175,123 @@ router.delete("/:id/fields/:fieldId", authMiddleware, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+router.post("/:id/submit", async (req, res) => {
+  try {
+    const form = await Form.findById(req.params.id);
+    if (!form) return res.status(404).json({ message: "Form not found" });
 
+    // You may want to validate responses against the form fields
+    const { responses } = req.body;
+
+    if (!responses || responses.length !== form.fields.length) {
+      return res.status(400).json({ message: "Invalid number of responses" });
+    }
+
+    // Prepare the submission object
+    const newSubmission = new Submission({
+      form: form._id,
+      responses,
+    });
+
+    // Save the submission to the database
+    await newSubmission.save();
+
+    res.status(201).json({
+      message: "Form submitted successfully",
+      submission: newSubmission,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/**
+ * @route   GET /api/forms/:id/submissions
+ * @desc    Get all submissions for a form
+ * @access  Private (only form creators can access)
+ */
+router.get("/:id/submissions", authMiddleware, async (req, res) => {
+  try {
+    const form = await Form.findById(req.params.id);
+    if (!form) return res.status(404).json({ message: "Form not found" });
+
+    if (form.user.toString() !== req.user.id) {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+
+    const submissions = await Submission.find({ form: form._id });
+    res.json(submissions);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/**
+ * @route   GET /api/forms/:id/submissions/:submissionId
+ * @desc    Get a specific submission for a form
+ * @access  Private (only form creators can access)
+ */
+router.get(
+  "/:id/submissions/:submissionId",
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const form = await Form.findById(req.params.id);
+      if (!form) return res.status(404).json({ message: "Form not found" });
+
+      if (form.user.toString() !== req.user.id) {
+        return res.status(403).json({ message: "Unauthorized" });
+      }
+
+      const submission = await Submission.findOne({
+        form: form._id,
+        _id: req.params.submissionId,
+      });
+      if (!submission) {
+        return res.status(404).json({ message: "Submission not found" });
+      }
+
+      res.json(submission);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ message: "Server error" });
+    }
+  }
+);
+
+/**
+ * @route   DELETE /api/forms/:id/submissions/:submissionId
+ * @desc    Delete a specific submission
+ * @access  Private (only form creators can access)
+ */
+router.delete(
+  "/:id/submissions/:submissionId",
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const form = await Form.findById(req.params.id);
+      if (!form) return res.status(404).json({ message: "Form not found" });
+
+      if (form.user.toString() !== req.user.id) {
+        return res.status(403).json({ message: "Unauthorized" });
+      }
+
+      const submission = await Submission.findOneAndDelete({
+        form: form._id,
+        _id: req.params.submissionId,
+      });
+
+      if (!submission) {
+        return res.status(404).json({ message: "Submission not found" });
+      }
+
+      res.json({ message: "Submission deleted" });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ message: "Server error" });
+    }
+  }
+);
 export default router;
